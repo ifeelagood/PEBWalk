@@ -136,7 +136,6 @@
     <ClCompile Include="xxhash32.cpp" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="imports.h" />
     <ClInclude Include="loader.h" />
     <ClInclude Include="prng.h" />
     <ClInclude Include="xxhash32.h" />

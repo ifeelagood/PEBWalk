@@ -35,9 +35,6 @@
     <ClInclude Include="xxhash32.h">
       <Filter>Header Files</Filter>
     </ClInclude>
-    <ClInclude Include="imports.h">
-      <Filter>Header Files</Filter>
-    </ClInclude>
   </ItemGroup>
   <ItemGroup>
     <MASM Include="GetPEBAddress.asm">

@@ -1,6 +1,5 @@
 #include "loader.h"
 
-#include "prng.h"
 
 #include <stdexcept>
 #include <string.h>
@@ -12,7 +11,7 @@ typedef uint64_t QWORD;
 #define a(STR) xxh32_consteval(STR, 0)
 
 
-Loader::Loader(const ImportHashTable& imports)
+Loader::Loader(std::vector<std::string> modules) 
     : peb(GetPEB())
 {
     // 1. resolve kernel 32
@@ -34,41 +33,37 @@ Loader::Loader(const ImportHashTable& imports)
     this->LoadLibraryA      = (t_LoadLibraryA)      functions[a("LoadLibraryA")];
     this->GetProcAddress    = (t_GetProcAddress)    functions[a("GetProcAddress")];
 
-    // 3. load libraries from import
-    for (auto mod : imports) {
+    for (const std::string& mod : modules) {
         HMODULE handle;
-        if (mod.first == e("KERNEL32.DLL")) {
+        if (mod == e("KERNEL32.DLL")) {
             handle = kernel32base;
         }
         else {
-            handle = this->LoadLibraryA(mod.first.c_str());
+            handle = this->LoadLibraryA(mod.c_str());
         }
 
         if (!handle) {
             throw std::runtime_error("could not load library");
             return;
         }
-        module_handles[xxh32_runtime(mod.first.c_str())] = handle;
-
-        for (auto func_hash : mod.second) {
-            unresolved_hashes.insert(func_hash);
-        }
-
-        // walk peb
-        ResolveFunctionHashes(handle);
-
-        if (!unresolved_hashes.empty()) {
-            throw std::runtime_error("unresolved hashes");
-        }
+        module_handles.push_back(handle);
     }
 
 }
 
-PVOID Loader::LookupFunction(uint32_t func)
-{
-    if (functions[func]) {
+PVOID Loader::LookupFunction(uint32_t func) {
+    if (functions.contains(func)) {
         return functions[func];
     }
+
+    for (const HMODULE& handle : module_handles) {
+        PVOID f = FindFunctionByHash(handle, func);
+        if (f) {
+            return functions[func] = f;
+        }
+    }
+    throw std::runtime_error("could not find function");
+
     return nullptr;
 }
 
@@ -134,7 +129,7 @@ PVOID Loader::GetProcAddressPEB(HMODULE hModule, LPCSTR lpProcName)
     return NULL;
 }
 
-void Loader::ResolveFunctionHashes(HMODULE hModule)
+PVOID Loader::FindFunctionByHash(HMODULE hModule, uint32_t func_hash)
 {
     // TODO 32 bit support
     PIMAGE_DOS_HEADER pDOSHeader = (PIMAGE_DOS_HEADER)hModule;
@@ -162,16 +157,14 @@ void Loader::ResolveFunctionHashes(HMODULE hModule)
 
         uint32_t key = xxh32_runtime(functionName, 0);
 
-        if (unresolved_hashes.count(key)) {
+        if (key == func_hash) {
             auto func = (PVOID)((BYTE*)hModule + pAddressOfFunctions[pAddressOfNameOrdinals[i]]);
             
-            functions[key] = func;
-
-            unresolved_hashes.erase(key);
+            return func;
         }
     }
 
-    return;
+    return nullptr;
 }
 
 

@@ -3,13 +3,20 @@
 #include <Windows.h>
 #include <winternl.h>
 
+#include <string>
 #include <vector>
 #include <cstring>
 #include <map>
 #include <set>
+#include <type_traits>
+#include <utility>
+#include <unordered_map>
 
 #include "xxhash32.h"
-#include "imports.h"
+#include "prng.h"
+
+#define e(STRING) make_encrypted_string(STRING)
+
 
 extern "C" void* GetPEBAddress32();
 extern "C" void* GetPEBAddress64();
@@ -44,44 +51,34 @@ private:
     PVOID GetProcAddressPEB(HMODULE module, LPCSTR proc_name);
 
 private:
-    void ResolveFunctionHashes(HMODULE module);
+    PVOID FindFunctionByHash(HMODULE module, uint32_t func_hash);
 
-private:
-    std::set<uint32_t> unresolved_hashes;
-
-    // module name hash -> module base address
-    std::unordered_map<uint32_t, HMODULE> module_handles;
-    
+private:    
     // function name hash -> function pointer
     std::unordered_map<uint32_t, PVOID> functions;
 
-
+    std::vector<HMODULE> module_handles;
 
 public:
-    Loader(const ImportHashTable& imports);
+    Loader(std::vector<std::string> _modules);
+
+    // delete copy constructors
+    Loader(const Loader&) = delete; 
+    Loader& operator=(const Loader&) = delete;
+
+    static Loader& get_instance() {
+        static Loader instance({ e("KERNEL32.dll"), e("user32.dll"), e("ws2_32.dll") });
+        return instance;
+    }
 
 public:
     PVOID LookupFunction(uint32_t func);
 
 public:
-    template <typename Ret, typename... Args> 
-    Ret call_stdcall(PVOID func, Args... args) {
-        return reinterpret_cast<Ret(__stdcall*)(Args...)>(func)(args...);
+    template <typename Fn, typename... Args>
+    auto call(uint32_t hash, Args... args) {
+        return reinterpret_cast<Fn>(LookupFunction(hash))(args...);
     }
 
-    template <typename Ret, typename... Args>
-    Ret call_stdcall(uint32_t hash, Args... args) {
-        return reinterpret_cast<Ret(__stdcall*)(Args...)>(functions[hash])(args...);
-    }
 
-    template <typename Ret, typename... Args>
-    Ret call_cdecl(PVOID func, Args... args) {
-        return reinterpret_cast<Ret(__cdecl*)(Args...)>(func)(args...);
-    }
-
-    template <typename Ret, typename... Args>
-    Ret call_cdecl(uint32_t hash, Args... args) {
-        return reinterpret_cast<Ret(__cdecl*)(Args...)>(functions[hash])(args...);
-    }
 };
-
